@@ -1,0 +1,243 @@
+---
+title: "Data Visualization"
+format: html
+---
+
+## Getting the data ready
+```{r}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(forcats) # makes working with factors easier
+library(ggplot2)
+library(leaflet) # interactive maps
+library(DT) # interactive tables
+library(scales) # scale functions for visualization
+library(janitor) # expedite cleaning and exploring data
+library(viridis) # colorblind friendly color palette
+```
+
+```{r}
+delta_visits_raw <- read_csv("https://portal.edirepository.org/nis/dataviewer?packageid=edi.587.1&entityid=cda8c1384af0089b506d51ad8507641f")
+```
+```{r}
+# check out column names
+colnames(delta_visits_raw)
+
+# peak at each column and class
+glimpse(delta_visits_raw)
+
+# from when to when
+range(delta_visits_raw$Date)
+
+# which time of day?
+unique(delta_visits_raw$Time_of_Day)
+```
+
+```{r}
+delta_visits <- delta_visits_raw %>%
+  # clean column names
+  janitor::clean_names()
+
+colnames(delta_visits)
+```
+```{r}
+visits_long <- delta_visits %>%
+  # pivot longer all the visitor columns 
+  pivot_longer(cols = c(sm_boat, med_boat, lrg_boat, bank_angler, scientist, cars),
+               names_to = "visitor_type",
+               values_to = "quantity") %>%
+  # rename eco_restore_approximate_location to restore_loc
+  rename(restore_loc = eco_restore_approximate_location) %>%
+  # drop the notes column
+  select(-notes)
+
+head(visits_long)
+```
+
+```{r}
+# calculate the daily visits by restore_loc, date, and visitor_type
+daily_visits_loc <- visits_long %>%
+  group_by(restore_loc, date, visitor_type) %>%
+  summarize(daily_visits = sum(quantity))
+
+head(daily_visits_loc)
+```
+## Plotting with ggplot2
+
+### Essential components
+```{r}
+## Option 1 - data and mapping called in the ggplot() function
+ggplot(data = daily_visits_loc,
+       aes(x = restore_loc, y = daily_visits))+
+    geom_col()
+
+
+## Option 2 - data called in ggplot function; mapping called in geom
+ggplot(data = daily_visits_loc) +
+    geom_col(aes(x = restore_loc, y = daily_visits))
+
+
+## Option 3 - data and mapping called in geom
+ggplot() +
+    geom_col(data = daily_visits_loc,
+             aes(x = restore_loc, y = daily_visits))
+```
+
+### Looking at different geoms_*
+
+#### Boxplot
+```{r}
+daily_visits_loc %>%
+    separate(date, c("year", "month", "day"), sep = "-") %>%
+    filter(daily_visits < 30,
+           visitor_type %in% c("sm_boat", "med_boat", "lrg_boat")) %>%
+    ggplot(aes(x = visitor_type, y = daily_visits)) +
+    geom_boxplot()
+```
+
+#### Violin plot
+```{r}
+daily_visits_loc %>%
+    separate(date, c("year", "month", "day"), sep = "-") %>%
+    filter(daily_visits < 30,
+           visitor_type %in% c("sm_boat", "med_boat", "lrg_boat")) %>%
+    ggplot(aes(x = visitor_type, y = daily_visits)) +
+  geom_violin()
+```
+
+#### Lineplot
+```{r}
+daily_visits_loc %>%
+    filter(restore_loc == "Decker Island",
+           visitor_type == "med_boat") %>%
+    ggplot(aes(x = date, y = daily_visits)) +
+    geom_line() +
+    geom_point()
+```
+
+### Customizing our plot
+```{r}
+ggplot(data = daily_visits_loc,
+       aes(x = restore_loc, y = daily_visits,
+           fill = "blue")) +
+  geom_col()
+```
+```{r}
+# color our bars blue (correctly this time)
+ggplot(data = daily_visits_loc,
+       aes(x = restore_loc, y = daily_visits)) +
+  geom_col(fill = "blue")
+```
+
+```{r}
+ggplot(data = daily_visits_loc,
+       aes(x = restore_loc, y = daily_visits,
+           fill = visitor_type)) +
+  geom_col()
+```
+
+```{r}
+# indicate the data and variables we want to plot
+ggplot(data = daily_visits_loc,
+       aes(x = restore_loc, y = daily_visits,
+           # color by visitor_type
+           fill = visitor_type))+
+    # make a bar plot
+    geom_col()+
+    # add a title, subtitle, and labels
+    labs(x = "Restoration Location",
+         y = "Number of Visits",
+         fill = "Type of Visitor",
+         title = "Total Number of Visits to Delta Restoration Areas by visitor type",
+         subtitle = "Sum of all visits during July 2017 and March 2018")+
+    # flip our plot
+    coord_flip()+
+    # a premade theme setting that ggplot has for us 
+    theme_bw() +
+    # move the legend to the bottom
+    theme(legend.position = "bottom",
+          # specify y-axis
+          axis.ticks.y = element_blank())
+```
+
+
+```{r}
+# Useful baseline themes
+#theme_minimal()
+#theme_light()
+#theme_classic()
+```
+
+```{r}
+# saving all theme customizations into a variable for reuse
+my_theme <- theme_bw(base_size = 16) +
+  theme(legend.position = "bottom",
+        axis.ticks.y = element_blank())
+
+ggplot(data = daily_visits_loc,
+       aes(x = restore_loc, y = daily_visits,
+           # color by visitor_type
+           fill = visitor_type))+
+    # make a bar plot
+    geom_col()+
+    # add a title, subtitle, and labels
+    labs(x = "Restoration Location",
+         y = "Number of Visits",
+         fill = "Type of Visitor",
+         title = "Total Number of Visits to Delta Restoration Areas by visitor type",
+         subtitle = "Sum of all visits during July 2017 and March 2018")+
+    # flip our plot
+    coord_flip()+
+    # set the y-axis increments to increment by 20 instead
+    # and get rid of the indent at the left
+    scale_y_continuous(breaks = seq(0,120,20), expand = c(0,0)) +
+    # setting my own theme that I saved earlier
+    my_theme
+        
+```
+
+```{r}
+# add a column to our data with the total number of visits by location
+daily_visits_totals <- daily_visits_loc %>%
+  group_by(restore_loc) %>%
+  mutate(n = sum(daily_visits)) %>%
+  ungroup()
+
+head(daily_visits_totals)
+```
+
+```{r}
+ggplot(data = daily_visits_totals,
+       # order bars from least to great
+       aes(x = fct_reorder(restore_loc, desc(n)), y = daily_visits,
+           # color by visitor_type
+           fill = visitor_type))+
+    # make a bar plot
+    geom_col()+
+    # change color palette
+    scale_fill_viridis_d()+
+    # add a title, subtitle, and labels
+    labs(x = "Restoration Location",
+         y = "Number of Visits",
+         fill = "Type of Visitor",
+         title = "Total Number of Visits to Delta Restoration Areas by visitor type",
+         subtitle = "Sum of all visits during July 2017 and March 2018")+
+    # flip our plot
+    coord_flip()+
+    # set the y-axis increments to increment by 20 instead
+    # and get rid of the indent at the left
+    scale_y_continuous(breaks = seq(0,120,20), expand = c(0,0)) +
+    # setting my own theme that I saved earlier
+    my_theme
+```
+
+```{r}
+# save our plot
+ggsave("plots/visit_restore_site_delta.jpg", width = 12, height = 6, units = "in")
+```
+
+```{r}
+
+```
+
