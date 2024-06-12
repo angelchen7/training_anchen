@@ -11,4 +11,4 @@ plots/
 data/
 
 # ignore png files
-*.png
+#*.png
