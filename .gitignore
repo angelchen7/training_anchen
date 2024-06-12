@@ -9,3 +9,6 @@ plots/
 
 # ignore data folder
 data/
+
+# ignore png files
+*.png
